@@ -121,6 +121,11 @@ function smooth(t: number) {
   return x * x * (3 - 2 * x);
 }
 
+/** Outgoing copy dies before incoming copy starts — never two titles on screen. */
+function copyOpacity(fade: number, incoming: boolean) {
+  return incoming ? smooth((fade - 0.56) / 0.26) : 1 - smooth((fade - 0.12) / 0.26);
+}
+
 export function HomeReel() {
   const track = useRef<HTMLDivElement>(null);
   const [progress, setProgress] = useState(0);
@@ -170,6 +175,9 @@ export function HomeReel() {
   const layer = LAYERS[i] ?? LAYERS[0];
   const incoming = LAYERS[next] ?? layer;
   const marquee = smooth((exact - 3.4) / 1.1);
+  const incomingCopy = fade >= 0.5;
+  const captionLayer = incomingCopy ? incoming : layer;
+  const captionOpacity = next === i ? 1 : copyOpacity(fade, incomingCopy);
 
   return (
     <section
@@ -209,8 +217,12 @@ export function HomeReel() {
           <div className="h-full bg-red" style={{ width: `${Math.round(progress * 100)}%` }} />
         </div>
 
-        <Caption layer={layer} opacity={1 - fade} marquee={marquee} />
-        {next !== i ? <Caption layer={incoming} opacity={fade} marquee={marquee} /> : null}
+        <Caption
+          layer={captionLayer}
+          opacity={captionOpacity}
+          marquee={marquee}
+          rise={incomingCopy}
+        />
 
         <div
           className="absolute inset-x-0 bottom-0 z-30"
@@ -227,19 +239,23 @@ function Caption({
   layer,
   opacity,
   marquee,
+  rise,
 }: {
   layer: Layer;
   opacity: number;
   marquee: number;
+  rise: boolean;
 }) {
   if (opacity < 0.04) return null;
+  const shift = (1 - opacity) * (rise ? -22 : 22);
   return (
     <div
-      className="absolute inset-x-0 z-20 flex items-end justify-between gap-6 px-5 md:px-10"
+      className="pointer-events-none absolute inset-x-0 z-20 flex items-end justify-between gap-6 px-5 md:px-10"
       style={{
         opacity,
         bottom: marquee > 0.08 ? "7.5rem" : "2.5rem",
         paddingBottom: "1.5rem",
+        transform: `translateY(${shift}px)`,
       }}
     >
       <div className="max-w-3xl">
@@ -258,7 +274,7 @@ function Caption({
           <p className="mt-3 max-w-md text-sm leading-relaxed text-steel md:text-base">{layer.body}</p>
         ) : null}
       </div>
-      {layer.actions}
+      {layer.actions ? <div className="pointer-events-auto">{layer.actions}</div> : null}
     </div>
   );
 }

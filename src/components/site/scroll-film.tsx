@@ -6,6 +6,15 @@ export type ScrollCaption = {
   body?: string;
 };
 
+function smooth(t: number) {
+  const x = Math.max(0, Math.min(1, t));
+  return x * x * (3 - 2 * x);
+}
+
+function copyOpacity(fade: number, incoming: boolean) {
+  return incoming ? smooth((fade - 0.56) / 0.26) : 1 - smooth((fade - 0.12) / 0.26);
+}
+
 export function ScrollFilm({
   id,
   frames,
@@ -21,6 +30,7 @@ export function ScrollFilm({
 }) {
   const track = useRef<HTMLDivElement>(null);
   const [progress, setProgress] = useState(0);
+  const [exit, setExit] = useState(0);
 
   useEffect(() => {
     frames.forEach((src) => {
@@ -31,6 +41,7 @@ export function ScrollFilm({
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduced) {
       setProgress(0);
+      setExit(0);
       return;
     }
 
@@ -38,10 +49,17 @@ export function ScrollFilm({
     const measure = () => {
       const el = track.current;
       if (!el) return;
+      const rect = el.getBoundingClientRect();
       const total = el.offsetHeight - window.innerHeight;
-      if (total <= 0) return;
-      const p = Math.max(0, Math.min(1, -el.getBoundingClientRect().top / total));
-      setProgress(p);
+      if (total > 0) {
+        const p = Math.max(0, Math.min(1, -rect.top / total));
+        setProgress(p);
+      }
+      const leave =
+        rect.bottom >= window.innerHeight
+          ? 0
+          : 1 - Math.max(0, rect.bottom) / window.innerHeight;
+      setExit(leave);
     };
     const onScroll = () => {
       cancelAnimationFrame(raf);
@@ -62,11 +80,17 @@ export function ScrollFilm({
   const i = Math.min(last, Math.floor(exact));
   const next = Math.min(last, i + 1);
   const fade = exact - i;
-  const cap = captions[Math.min(captions.length - 1, i)] ?? captions[0];
+  const capA = captions[Math.min(captions.length - 1, i)] ?? captions[0];
+  const capB = captions[Math.min(captions.length - 1, next)] ?? capA;
+  const sameCopy = capA?.title === capB?.title && capA?.kicker === capB?.kicker;
+  const incomingCopy = fade >= 0.5;
+  const cap = incomingCopy ? capB : capA;
+  const swap = next !== i && !sameCopy ? copyOpacity(fade, incomingCopy) : 1;
+  const shown = swap * (1 - smooth(exit / 0.32));
 
   return (
-    <section id={id} ref={track} className="relative bg-bg" style={{ height: `${length}vh` }}>
-      <div className="sticky top-0 h-dvh overflow-hidden">
+    <section id={id} ref={track} className="relative isolate bg-bg" style={{ height: `${length}vh` }}>
+      <div className="sticky top-0 z-0 h-dvh overflow-hidden">
         {frames.map((src, idx) => {
           const show = idx === i || idx === next;
           if (!show) return null;
@@ -84,8 +108,14 @@ export function ScrollFilm({
         <div className="absolute inset-x-0 top-0 h-[2px] bg-transparent">
           <div className="h-full bg-red" style={{ width: `${Math.round(progress * 100)}%` }} />
         </div>
-        {cap ? (
-          <div className="absolute inset-x-0 bottom-0 z-10 px-5 pb-10 md:px-10 md:pb-14">
+        {cap && shown > 0.04 ? (
+          <div
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-5 pb-10 md:px-10 md:pb-14"
+            style={{
+              opacity: shown,
+              transform: `translateY(${(1 - swap) * (incomingCopy ? -18 : 18)}px)`,
+            }}
+          >
             <p className="font-mono text-[10px] uppercase tracking-[0.32em] text-red">{cap.kicker}</p>
             <h2 className="mt-2 max-w-3xl font-display text-4xl leading-[0.92] tracking-wide text-fg md:text-6xl">
               {cap.title}
